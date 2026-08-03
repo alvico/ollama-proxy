@@ -58,7 +58,7 @@ impl AppState {
             }
         }
 
-        eprintln!("[proxy] active backend -> '{target}'");
+        log::info!("active backend -> '{target}'");
         *active = Some(target.to_owned());
     }
 }

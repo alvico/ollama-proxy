@@ -21,7 +21,8 @@
 
   "_defaults": "Same merge and the same longest-prefix match as options, but for fields beside the options object rather than inside it. think is one: it is top-level in the ollama request, so options cannot reach it. The empty prefix matches every model.",
   "_defaults_think": "Off by default because the reasoning block and the answer share one num_predict budget, and reasoning wins. Measured on qwen3.6:35b-a3b at temperature 0: 94-99% of generated tokens went to reasoning across three prompts; 17*23 spent 280 tokens to return '391'; an LRU-cache prompt exhausted a 2048-token cap on reasoning alone and returned an empty answer (done_reason 'length'). Clients that want it send think:true and the merge leaves that untouched. think:false is accepted by completion-only models (verified against falcon-mamba), so the blanket prefix is safe for the four models here with no thinking capability.",
+  "_defaults_v1_quirk": "ollama's OpenAI-compatible /v1/chat/completions endpoint IGNORES the top-level think field for qwen3 thinking models: think:false still produces a long reasoning block that exhausts max_tokens and returns an empty answer (finish_reason 'length'). That same endpoint honors reasoning_effort instead, so both are injected: think:false covers native /api/chat, reasoning_effort:none covers /v1. Verified on qwen3.6:35b-a3b: v1+think:false -> 4786 reasoning chars + empty content; v1+reasoning_effort:none -> 0 reasoning chars, clean answer. Native /api/chat ignores unknown fields like reasoning_effort, so injecting it is safe there.",
   "defaults": {
-    "": { "think": false }
+    "": { "think": false, "reasoning_effort": "none" }
   }
 }

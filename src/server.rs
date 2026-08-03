@@ -14,20 +14,20 @@ pub async fn run(config: Config) -> io::Result<()> {
 }
 
 fn describe(config: &Config) {
-    println!("[proxy] listening on {}", config.listen);
+    log::info!("listening on {}", config.listen);
     for (name, base) in &config.backends {
-        println!("[proxy]   backend '{name}' -> {base}");
+        log::info!("backend '{name}' -> {base}");
     }
     for (prefix, backend) in &config.routes {
-        println!("[proxy]   route '{prefix}*' -> '{backend}'");
+        log::info!("route '{prefix}*' -> '{backend}'");
     }
-    println!("[proxy]   everything else -> '{}'", config.default_backend);
+    log::info!("everything else -> '{}'", config.default_backend);
     for (prefix, options) in &config.options {
         let rendered: Vec<String> = options.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        println!("[proxy]   options '{prefix}*' <- {}", rendered.join(" "));
+        log::info!("options '{prefix}*' <- {}", rendered.join(" "));
     }
     for (prefix, fields) in &config.defaults {
         let rendered: Vec<String> = fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        println!("[proxy]   defaults '{prefix}*' <- {}", rendered.join(" "));
+        log::info!("defaults '{prefix}*' <- {}", rendered.join(" "));
     }
 }

@@ -23,6 +23,12 @@ cargo build --release
 ./target/release/ollama-proxy config.json
 ```
 
+Logging goes to stderr via `env_logger`. The default level is `info`; set `RUST_LOG=debug` for per-request routing detail or `RUST_LOG=warn`/`error` to quiet it down.
+
+```sh
+RUST_LOG=debug ./target/release/ollama-proxy config.json
+```
+
 ## Configuration
 
 See `config.json` for the annotated example.

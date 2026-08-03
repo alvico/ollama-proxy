@@ -28,10 +28,10 @@ pub async fn drain(client: &Client, base: &str) -> usize {
     for model in resident(client, base).await {
         match unload(client, base, &model).await {
             Ok(()) => {
-                eprintln!("[proxy] evicted {model} from {base}");
+                log::info!("evicted {model} from {base}");
                 freed += 1;
             }
-            Err(e) => eprintln!("[proxy] failed to evict {model} from {base}: {e}"),
+            Err(e) => log::warn!("failed to evict {model} from {base}: {e}"),
         }
     }
     freed

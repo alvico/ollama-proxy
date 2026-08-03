@@ -56,10 +56,10 @@ pub async fn proxy(State(state): State<Arc<AppState>>, request: Request) -> Resp
         let fields = state.defaults_for(model).unwrap_or(&empty);
         let defaults = state.options_for(model).unwrap_or(&empty);
         if let Some(merged) = options::merge(&body, fields, defaults) {
-            eprintln!("[proxy] {model}: defaulted {}", merged.applied.join(", "));
+            log::debug!("{model}: defaulted {}", merged.applied.join(", "));
             body = merged.body;
         }
-        eprintln!("[proxy] {} {path} model={model} -> '{name}'", parts.method);
+        log::debug!("{} {path} model={model} -> '{name}'", parts.method);
         state.activate(&name).await;
     }
 
@@ -121,6 +121,6 @@ fn relay_headers(upstream: &HeaderMap) -> HeaderMap {
 }
 
 fn error(status: StatusCode, message: String) -> Response {
-    eprintln!("[proxy] {message}");
+    log::error!("{message}");
     (status, message).into_response()
 }
