@@ -1,0 +1,27 @@
+{
+  "listen": "0.0.0.0:11434",
+
+  "_backends": "Two servers, because OLLAMA_KV_CACHE_TYPE is read once at server start and has no per-request override. Every other setting that matters (num_ctx, num_predict, temperature) can be set per request, so it needs no server of its own.",
+  "backends": {
+    "q8": "http://127.0.0.1:11435",
+    "f16": "http://127.0.0.1:11436"
+  },
+
+  "_default": "f16 is the safe default: q8_0 quantises KV in blocks of 32, which must divide the model's V head dimension. kimi-linear has n_embd_head_v=72 and cannot ever load on q8_0, so unknown models have to land here.",
+  "default_backend": "f16",
+
+  "_routes": "Longest matching prefix wins, so 'gemma4' covers 'gemma4:12b'. q8_0 only pays off for models that are VRAM-bound. Measured on a 10GB RTX 3080 at ctx 16384, num_parallel 1 (eval tok/s): gemma4 53.9 -> 62.9 on q8; qwen3-coder 29.6 -> 31.0 on q8. Models that already fit entirely are SLOWER on q8_0 (qwen3.5 98.2 on f16 vs 96.8 on q8; falcon-mamba 107.8 on f16), so they stay on f16 rather than being opted in.",
+  "routes": {
+    "gemma4": "q8",
+    "qwen3-coder": "q8"
+  },
+
+  "_options": "Merged into a model-bearing request when the client omits the key; an explicit client value always wins. Matched by the same longest prefix as routes. Deliberately empty: num_parallel=1 alone took gemma4 from 28.1 to 62.9 tok/s, and halving num_ctx bought nothing further (62.9 at ctx 16384 vs 62.8 at 8192), so no per-model option is worth injecting. Injection is verified (longest prefix wins, client values survive, unknown models untouched) and stays as a hook for future models.",
+  "options": {},
+
+  "_defaults": "Same merge and the same longest-prefix match as options, but for fields beside the options object rather than inside it. think is one: it is top-level in the ollama request, so options cannot reach it. The empty prefix matches every model.",
+  "_defaults_think": "Off by default because the reasoning block and the answer share one num_predict budget, and reasoning wins. Measured on qwen3.6:35b-a3b at temperature 0: 94-99% of generated tokens went to reasoning across three prompts; 17*23 spent 280 tokens to return '391'; an LRU-cache prompt exhausted a 2048-token cap on reasoning alone and returned an empty answer (done_reason 'length'). Clients that want it send think:true and the merge leaves that untouched. think:false is accepted by completion-only models (verified against falcon-mamba), so the blanket prefix is safe for the four models here with no thinking capability.",
+  "defaults": {
+    "": { "think": false }
+  }
+}
