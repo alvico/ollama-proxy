@@ -8,7 +8,7 @@
 param(
     [string]$OllamaDir   = "E:\claude\Ollama",
     [string]$ProxyDir    = "F:\Code\work\ollama-proxy",
-    [string]$ServeScript = "F:\Code\work\tests\ollama-serve-awake.ps1",
+    [string]$ServeScript = (Join-Path $ProxyDir "ollama-serve-awake.ps1"),
     [int]$Q8Port         = 11435,
     [int]$F16Port        = 11436,
     [string]$LogDir      = (Join-Path $env:LOCALAPPDATA "Ollama\serve-logs")

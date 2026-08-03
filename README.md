@@ -38,7 +38,7 @@ See `config.json` for the annotated example.
 
 ## Windows stack
 
-`start-stack.ps1` launches the two tuned backends (one `q8_0`, one `f16`) plus the proxy, keeps the machine awake while it runs, and stops everything on exit. The default ports are `11434` (proxy), `11435` (`q8_0`), `11436` (`f16`).
+`start-stack.ps1` launches the two tuned backends (one `q8_0`, one `f16`) plus the proxy, keeps the machine awake while it runs, and stops everything on exit. The default ports are `11434` (proxy), `11435` (`q8_0`), `11436` (`f16`). Each backend is started by `ollama-serve-awake.ps1`, which applies the tuning environment variables (`OLLAMA_CONTEXT_LENGTH`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_KV_CACHE_TYPE`, ...), redirects server logs to `%LOCALAPPDATA%\Ollama\serve-logs`, and holds a keep-awake request while the server runs.
 
 ```powershell
 .\start-stack.ps1
