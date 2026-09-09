@@ -7,22 +7,27 @@
     "f16": "http://127.0.0.1:11436"
   },
 
-  "_default": "f16 is the safe default: q8_0 quantises KV in blocks of 32, which must divide the model's V head dimension. kimi-linear has n_embd_head_v=72 and cannot ever load on q8_0, so unknown models have to land here.",
+  "_default": "f16, now on measured merit rather than only as a safety fallback. The original reason was a hard constraint: q8_0 quantises KV in blocks of 32, which must divide the model's V head dimension, and kimi-linear (n_embd_head_v=72) could never load on it. kimi-linear was deleted 2026-09-04 and every model now owned has head_v 64/128/256, so the constraint no longer binds anything -- but f16 also won every measurement below, so the default stands on its own.",
   "default_backend": "f16",
 
-  "_routes": "Longest matching prefix wins, so 'gemma4' covers 'gemma4:12b'. q8_0 only pays off for models that are VRAM-bound. Measured on a 10GB RTX 3080 at ctx 16384, num_parallel 1 (eval tok/s): gemma4 53.9 -> 62.9 on q8; qwen3-coder 29.6 -> 31.0 on q8. Models that already fit entirely are SLOWER on q8_0 (qwen3.5 98.2 on f16 vs 96.8 on q8; falcon-mamba 107.8 on f16), so they stay on f16 rather than being opted in.",
-  "routes": {
-    "gemma4": "q8",
-    "qwen3-coder": "q8"
+  "_routes": "Longest matching prefix wins, so 'gemma4' would cover 'gemma4:12b'. Deliberately EMPTY: re-measured 2026-09-04 on ollama 0.33.2 (10GB RTX 3080, ctx 16384, num_parallel 1, temperature 0, eval tok/s, f16 vs q8) and f16 won on every model owned. lfm2.5:8b 311.5 vs 111.8 (-64%); nemotron-3.5-lightning:30b-a3b 37.4 vs 11.7 (-69%); north-mini-code-1.0 33.0 vs 30.3 (-8%); ministral-3:14b 12.1 vs 12.3 (+1.4%, under the 3% bar); qwen3.8:27b 8.0 vs 6.2 (-23%).",
+  "_routes_history": "The August entries were gemma4 -> q8 (53.9 -> 62.9) and qwen3-coder -> q8 (29.6 -> 31.0), both measured on an earlier ollama. Both models were deleted 2026-09-04, so the routes went with them. Those numbers now contradict every 2026-09-04 measurement, so if either model is pulled again, re-measure with bench-model.ps1 rather than restoring the old route -- and see _q8_instability before trusting a single run.",
+  "routes": {},
+
+  "_q8_instability": "q8 is not merely slower here, it is non-reproducible. nemotron-3.5-lightning:30b-a3b measured 11.7 tok/s with f16 benchmarked first and 4.1 tok/s (runs of 2.8 and 5.4) with q8 benchmarked first, a 4x swing for the same model, context and backend. f16 returned 37.4 in BOTH orders (37.1-37.8, then 37.7/37.2). Measurement order was tested explicitly and ruled out as the cause: q8 got worse when it went first, not better. Treat any single q8 measurement as unreliable; require a repeat in both orders before routing to it.",
+
+  "_options": "Merged into a model-bearing request when the client omits the key; an explicit client value always wins. Matched by the same longest prefix as routes. num_parallel=1 at server start remains the big win (gemma4 28.1 -> 62.9). Halving num_ctx buys nothing for a model that already fits entirely (gemma4 62.9 at 16384 vs 62.8 at 8192) -- but it is worth a lot for one that sits just over the VRAM line, which is what the ministral-3:14b entry below is.",
+  "_options_ministral": "ministral-3:14b is 8.5GB of weights against 8.9GiB of usable VRAM, so KV cache decides how much spills to CPU. Measured on f16 2026-09-04: ctx 16384 -> 12.1 tok/s, ctx 8192 -> 18.4 (+52%), ctx 4096 -> 24.1 (+99%). The curve never flattens, meaning the model never fully fits at any useful context; 8192 is chosen as the knee that keeps a usable window rather than the fastest number. This is only a DEFAULT: a client that sends its own num_ctx still gets it. Note this is a per-tag prefix, so ministral-3:3b and :8b (which fit) are untouched.",
+  "options": {
+    "ministral-3:14b": { "num_ctx": 8192 }
   },
 
-  "_options": "Merged into a model-bearing request when the client omits the key; an explicit client value always wins. Matched by the same longest prefix as routes. Deliberately empty: num_parallel=1 alone took gemma4 from 28.1 to 62.9 tok/s, and halving num_ctx bought nothing further (62.9 at ctx 16384 vs 62.8 at 8192), so no per-model option is worth injecting. Injection is verified (longest prefix wins, client values survive, unknown models untouched) and stays as a hook for future models.",
-  "options": {},
-
   "_defaults": "Same merge and the same longest-prefix match as options, but for fields beside the options object rather than inside it. think is one: it is top-level in the ollama request, so options cannot reach it. The empty prefix matches every model.",
-  "_defaults_think": "Off by default because the reasoning block and the answer share one num_predict budget, and reasoning wins. Measured on qwen3.6:35b-a3b at temperature 0: 94-99% of generated tokens went to reasoning across three prompts; 17*23 spent 280 tokens to return '391'; an LRU-cache prompt exhausted a 2048-token cap on reasoning alone and returned an empty answer (done_reason 'length'). Clients that want it send think:true and the merge leaves that untouched. think:false is accepted by completion-only models (verified against falcon-mamba), so the blanket prefix is safe for the four models here with no thinking capability.",
+  "_defaults_think": "Off by default because the reasoning block and the answer share one num_predict budget, and reasoning wins. Measured on qwen3.6:35b-a3b at temperature 0: 94-99% of generated tokens went to reasoning across three prompts; 17*23 spent 280 tokens to return '391'; an LRU-cache prompt exhausted a 2048-token cap on reasoning alone and returned an empty answer (done_reason 'length'). Clients that want it send think:true and the merge leaves that untouched. think:false is accepted by completion-only models (verified against falcon-mamba), so the blanket prefix is safe.",
   "_defaults_v1_quirk": "ollama's OpenAI-compatible /v1/chat/completions endpoint IGNORES the top-level think field for qwen3 thinking models: think:false still produces a long reasoning block that exhausts max_tokens and returns an empty answer (finish_reason 'length'). That same endpoint honors reasoning_effort instead, so both are injected: think:false covers native /api/chat, reasoning_effort:none covers /v1. Verified on qwen3.6:35b-a3b: v1+think:false -> 4786 reasoning chars + empty content; v1+reasoning_effort:none -> 0 reasoning chars, clean answer. Native /api/chat ignores unknown fields like reasoning_effort, so injecting it is safe there.",
+  "_exclusive_defaults": "think and reasoning_effort are the SAME switch on the two endpoints ollama exposes, so a client that pins either one is stating its intent and must not get the other defaulted against it. exclusive_defaults lists field-name groups: if a request already contains any member, none of the group's defaults are injected. The blanket default stays off for clients that send neither.",
   "defaults": {
     "": { "think": false, "reasoning_effort": "none" }
-  }
+  },
+  "exclusive_defaults": [["think", "reasoning_effort"]]
 }
