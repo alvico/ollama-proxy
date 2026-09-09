@@ -60,12 +60,53 @@ public static class PowerKeeper {
 '@
 Add-Type -TypeDefinition $code
 
-Write-Host "Stopping existing Ollama processes so the new configs apply..."
+Write-Host "Stopping any previous stack so the new configs apply..."
+
+# ollama-proxy belongs in this list, and its absence was a self-defeating bug:
+# the old proxy kept 11434, the new one could not bind it (os error 10048) and
+# exited at once, and because it had already exited the while loop below never
+# ran -- so control fell straight into the finally, which killed the backends
+# this script had just started. Every retry left the stack worse than before,
+# while the one process that looked healthy was the one holding the port.
+#
 # llama-server.exe is spawned by ollama serve but is not killed with it: an
 # orphaned runner keeps its model's weights in VRAM and shows up as a second
 # server alongside the stack's own.
-Get-Process -Name "ollama app", "ollama", "llama-server" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "ollama app", "ollama", "llama-server", "ollama-proxy" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Killing that proxy wakes any older start-stack.ps1 still supervising it: its
+# while loop notices within 5 seconds and runs the finally at the bottom of this
+# file, which kills "ollama" and "llama-server" GLOBALLY. Start a backend before
+# that fires and the old script tears it straight back down -- the same bug, one
+# step removed. So wait past that window, then sweep again. A finally runs once,
+# so once it has fired there is nothing left to interfere.
+#
+# Identifying those old supervisors by command line was tried and rejected: it
+# also matches any shell that merely MENTIONS this script -- an editor terminal,
+# a grep, the window it was launched from -- and killing those is a good deal
+# worse than waiting twelve seconds.
+Start-Sleep -Seconds 10
+Get-Process -Name "ollama app", "ollama", "llama-server", "ollama-proxy" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
+
+# The proxy starts LAST, so a port still held at this point would not surface
+# until after the backends are up, and the finally would then tear those down
+# too. Check now, while nothing has been started yet, and name whoever holds it
+# rather than failing later with a bind error buried in a log.
+$listenSpecs = if ($env:OLLAMA_PROXY_LISTEN) {
+    $env:OLLAMA_PROXY_LISTEN -split ',' | ForEach-Object { $_.Trim() }
+} else {
+    (Get-Content $config -Raw | ConvertFrom-Json).listen
+}
+foreach ($listenPort in ($listenSpecs | ForEach-Object { ($_ -split ':')[-1] } | Select-Object -Unique)) {
+    $holder = Get-NetTCPConnection -LocalPort $listenPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($holder) {
+        $owner = Get-Process -Id $holder.OwningProcess -ErrorAction SilentlyContinue
+        Write-Host "Port $listenPort is still held by $($owner.ProcessName) (PID $($holder.OwningProcess))." -ForegroundColor Red
+        Write-Host "Nothing was started. Stop that process, then re-run." -ForegroundColor Yellow
+        exit 1
+    }
+}
 
 if ([PowerKeeper]::KeepAwake() -eq 0) {
     Write-Host "Failed to suppress sleep." -ForegroundColor Red
