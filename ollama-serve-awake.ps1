@@ -1,5 +1,5 @@
 param(
-    [string]$OllamaDir = "E:\claude\Ollama",
+    [string]$OllamaDir = $env:OLLAMA_DIR,
     [int]$ContextLength = 16384,
     # Single user, so one slot. Every extra slot multiplies the KV cache by its
     # count, and on a 10GB card that KV is what pushes layers off the GPU:
@@ -19,6 +19,21 @@ param(
     [string]$LogDir = (Join-Path $env:LOCALAPPDATA "Ollama\serve-logs"),
     [switch]$SkipExistingCheck
 )
+
+# Where ollama lives is a property of the host, not of this project, so it is
+# not hardcoded: set OLLAMA_DIR, or let it be resolved from whatever ollama is
+# already on PATH. start-stack.ps1 resolves it the same way and passes the
+# result down with -OllamaDir, so this only runs when this script is invoked
+# on its own.
+if (-not $OllamaDir) {
+    $onPath = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    if ($onPath) {
+        $OllamaDir = Split-Path $onPath.Source -Parent
+    } else {
+        Write-Host "cannot find ollama.exe: set OLLAMA_DIR or pass -OllamaDir" -ForegroundColor Red
+        exit 1
+    }
+}
 
 $ollamaExe = Join-Path $OllamaDir "ollama.exe"
 if (-not (Test-Path $ollamaExe)) {
