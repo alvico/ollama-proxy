@@ -2,9 +2,8 @@
   "_listen": "One address or a list of them. Loopback only by default, because 127.0.0.1:11434 is what the ollama CLI assumes and it is the only address that is correct on every host. Deliberately NOT 0.0.0.0: the proxy has no authentication of its own, so anything that can reach the port can drive the models and read the prompts, and 0.0.0.0 exposes it on every network the host happens to be attached to -- including untrusted ones. To reach it from another machine, name that one interface's address explicitly rather than widening to 0.0.0.0. Since such an address is a property of the host and not of this project, set it in OLLAMA_PROXY_LISTEN (comma separated) instead of editing this file; the environment wins over the value here. List loopback first: a bind failure on one address is a warning rather than fatal, so local use keeps working when an on-demand interface such as a VPN is down.",
   "listen": ["127.0.0.1:11434"],
 
-  "_backends": "Two servers, because OLLAMA_KV_CACHE_TYPE is read once at server start and has no per-request override. Every other setting that matters (num_ctx, num_predict, temperature) can be set per request, so it needs no server of its own.",
+  "_backends": "One server per KV cache type, because OLLAMA_KV_CACHE_TYPE is read once at server start and has no per-request override. Every other setting that matters (num_ctx, num_predict, temperature) can be set per request, so it needs no server of its own. Only f16 is listed now, and start-stack.ps1 starts only that one: nothing routes to q8_0 (see _routes), so a second server was costing a process and six seconds of startup to receive no requests. To route a model to q8_0 again, start with -WithQ8 and add \"q8\": \"http://127.0.0.1:11435\" back here; a route naming a backend that is not listed fails validation at startup rather than at request time. MEASURING does not need this entry -- bench-model.ps1 talks to the backend ports directly, so -WithQ8 on its own is enough.",
   "backends": {
-    "q8": "http://127.0.0.1:11435",
     "f16": "http://127.0.0.1:11436"
   },
 

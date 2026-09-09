@@ -10,6 +10,10 @@
     Matches the methodology already recorded in config.json: ctx 16384,
     num_parallel 1 (set at server start), temperature 0, eval tok/s.
 
+    REQUIRES the q8_0 backend, which start-stack.ps1 no longer starts by
+    default because nothing routes to it. Start the stack with -WithQ8 first,
+    or the q8 half reports "backend not responding" and only f16 is measured.
+
     Usage:
       .\bench-model.ps1 -Model qwen3.6:35b-a3b-coding
       .\bench-model.ps1 -Model qwen3.6:35b-a3b-coding -NumCtx 32768 -Runs 5

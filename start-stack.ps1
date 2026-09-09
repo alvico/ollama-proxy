@@ -1,18 +1,40 @@
 <#
-    Starts the two tuned ollama backends plus the routing proxy.
+    Starts the tuned ollama backend(s) plus the routing proxy.
 
     The proxy takes 11434 so existing clients need no reconfiguration; the
     backends move to loopback-only ports behind it. Sleep is suppressed for as
     long as this script runs (see ollama-serve-awake.ps1 for the mechanism).
+
+    Only the f16 backend starts by default. The q8_0 one exists so a model can
+    be measured on both KV cache types, but nothing is routed to it: every model
+    measured so far was faster on f16, and q8_0 did not even reproduce between
+    runs (see _routes and _q8_instability in config.json). Starting it anyway
+    would cost a process and six seconds for a backend no request reaches, so it
+    is opt-in. Pass -WithQ8 before running bench-model.ps1, which needs both
+    backends up to compare them.
 #>
 param(
-    [string]$OllamaDir   = "E:\claude\Ollama",
-    [string]$ProxyDir    = "F:\Code\work\ollama-proxy",
+    [switch]$WithQ8,
+    [string]$ProxyDir    = $PSScriptRoot,
+    [string]$OllamaDir   = $env:OLLAMA_DIR,
     [string]$ServeScript = (Join-Path $ProxyDir "ollama-serve-awake.ps1"),
     [int]$Q8Port         = 11435,
     [int]$F16Port        = 11436,
     [string]$LogDir      = (Join-Path $env:LOCALAPPDATA "Ollama\serve-logs")
 )
+
+# Where ollama lives is a property of the host, not of this project, so it is
+# not hardcoded: set OLLAMA_DIR, or let it be resolved from whatever ollama is
+# already on PATH.
+if (-not $OllamaDir) {
+    $onPath = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    if ($onPath) {
+        $OllamaDir = Split-Path $onPath.Source -Parent
+    } else {
+        Write-Host "cannot find ollama.exe: set OLLAMA_DIR or pass -OllamaDir" -ForegroundColor Red
+        exit 1
+    }
+}
 
 $proxyExe = Join-Path $ProxyDir "target\release\ollama-proxy.exe"
 $config   = Join-Path $ProxyDir "config.json"
@@ -52,13 +74,18 @@ if ([PowerKeeper]::KeepAwake() -eq 0) {
 
 $procs = @()
 
-# Backends bind to loopback only: the proxy is the sole LAN-facing listener.
-Write-Host "Starting q8_0 backend on 127.0.0.1:$Q8Port ..." -ForegroundColor Cyan
-$procs += Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList @(
-    '-ExecutionPolicy','Bypass','-File',$ServeScript,
-    '-SkipExistingCheck','-Port',$Q8Port,'-KVCacheType','q8_0','-OllamaDir',$OllamaDir,'-LogDir',$LogDir)
+# Backends bind to loopback only: the proxy is the only listener reachable from
+# anywhere else.
+if ($WithQ8) {
+    Write-Host "Starting q8_0 backend on 127.0.0.1:$Q8Port ..." -ForegroundColor Cyan
+    $procs += Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList @(
+        '-ExecutionPolicy','Bypass','-File',$ServeScript,
+        '-SkipExistingCheck','-Port',$Q8Port,'-KVCacheType','q8_0','-OllamaDir',$OllamaDir,'-LogDir',$LogDir)
 
-Start-Sleep -Seconds 6
+    Start-Sleep -Seconds 6
+} else {
+    Write-Host "Skipping q8_0 backend (nothing routes to it; -WithQ8 to measure against it)." -ForegroundColor DarkGray
+}
 
 Write-Host "Starting f16 backend on 127.0.0.1:$F16Port ..." -ForegroundColor Cyan
 $procs += Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList @(
