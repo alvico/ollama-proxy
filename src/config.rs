@@ -2,9 +2,47 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::{collections::HashMap, fmt, path::Path};
 
+/// Environment override for `listen`, comma separated. Bind addresses are a
+/// property of the host rather than of the project, so this keeps a real
+/// deployment's addresses out of the committed config entirely.
+pub const LISTEN_ENV: &str = "OLLAMA_PROXY_LISTEN";
+
+/// Splits the environment override. Separate from the lookup so it can be
+/// tested without a test racing every other test over one process-wide
+/// variable.
+pub fn parse_listen_override(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// One or more bind addresses. A bare string is still accepted, so a config
+/// written before this existed keeps working. A list is what lets the proxy sit
+/// on the loopback and a private interface at once: the alternative, binding
+/// `0.0.0.0`, also exposes every other network the host is attached to, and the
+/// proxy has no authentication of its own -- anything that can reach the port
+/// can drive the models and read the prompts.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Listen {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Listen {
+    pub fn addresses(&self) -> &[String] {
+        match self {
+            Self::One(addr) => std::slice::from_ref(addr),
+            Self::Many(addrs) => addrs,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub listen: String,
+    pub listen: Listen,
     pub backends: HashMap<String, String>,
     pub default_backend: String,
     #[serde(default)]
@@ -32,6 +70,7 @@ pub enum ConfigError {
     Read(std::io::Error),
     Parse(serde_json::Error),
     NoBackends,
+    NoListenAddress,
     UnknownBackend { referenced_by: String, name: String },
 }
 
@@ -41,6 +80,7 @@ impl fmt::Display for ConfigError {
             Self::Read(e) => write!(f, "cannot read config: {e}"),
             Self::Parse(e) => write!(f, "invalid config: {e}"),
             Self::NoBackends => write!(f, "no backends defined"),
+            Self::NoListenAddress => write!(f, "listen is an empty list"),
             Self::UnknownBackend {
                 referenced_by,
                 name,
@@ -52,12 +92,28 @@ impl fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl Config {
+    /// Bind addresses, with `OLLAMA_PROXY_LISTEN` taking precedence over the
+    /// file so a host's own addresses need never be committed.
+    pub fn listen_addresses(&self) -> Vec<String> {
+        if let Ok(raw) = std::env::var(LISTEN_ENV) {
+            let overridden = parse_listen_override(&raw);
+            if !overridden.is_empty() {
+                return overridden;
+            }
+            log::warn!("{LISTEN_ENV} is set but empty; using the config file");
+        }
+        self.listen.addresses().to_vec()
+    }
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let raw = std::fs::read_to_string(path).map_err(ConfigError::Read)?;
         raw.parse()
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
+        if self.listen.addresses().is_empty() {
+            return Err(ConfigError::NoListenAddress);
+        }
         if self.backends.is_empty() {
             return Err(ConfigError::NoBackends);
         }

@@ -10,7 +10,7 @@ const VALID: &str = r#"{
 #[test]
 fn parses_a_valid_config() {
     let config: Config = VALID.parse().expect("should parse");
-    assert_eq!(config.listen, "0.0.0.0:11434");
+    assert_eq!(config.listen.addresses(), ["0.0.0.0:11434"]);
     assert_eq!(config.backends.len(), 2);
     assert_eq!(config.routes["kimi-linear"], "f16");
 }
