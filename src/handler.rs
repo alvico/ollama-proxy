@@ -52,14 +52,22 @@ pub async fn proxy(State(state): State<Arc<AppState>>, request: Request) -> Resp
     // Only model-bearing requests carry options, and only they justify evicting
     // the other backend.
     if let Some(model) = &model {
+        const PREVIEW: usize = 2048;
+        let preview: String = String::from_utf8_lossy(&body[..body.len().min(PREVIEW)]).into_owned();
+        log::debug!(
+            "{} {path} model={model} -> '{name}' body_bytes={} preview={preview}",
+            parts.method,
+            body.len()
+        );
         let empty = Map::new();
         let fields = state.defaults_for(model).unwrap_or(&empty);
         let defaults = state.options_for(model).unwrap_or(&empty);
-        if let Some(merged) = options::merge(&body, fields, defaults) {
+        if let Some(merged) =
+            options::merge(&body, fields, defaults, &state.config.exclusive_defaults)
+        {
             log::debug!("{model}: defaulted {}", merged.applied.join(", "));
             body = merged.body;
         }
-        log::debug!("{} {path} model={model} -> '{name}'", parts.method);
         state.activate(&name).await;
     }
 
@@ -121,6 +129,6 @@ fn relay_headers(upstream: &HeaderMap) -> HeaderMap {
 }
 
 fn error(status: StatusCode, message: String) -> Response {
-    log::error!("{message}");
+    log::info!("{message}");
     (status, message).into_response()
 }
