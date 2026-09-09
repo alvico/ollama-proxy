@@ -18,6 +18,13 @@ pub struct Config {
     /// cannot be defaulted through `options`.
     #[serde(default)]
     pub defaults: HashMap<String, Map<String, Value>>,
+    /// Groups of defaulted field names treated as one knob: if a client request
+    /// already contains any member of a group, none of the group's defaults are
+    /// injected. `think` and `reasoning_effort` are the same switch on the two
+    /// endpoints ollama exposes, so a client pinning either must not get the
+    /// other defaulted against it.
+    #[serde(default)]
+    pub exclusive_defaults: Vec<Vec<String>>,
 }
 
 #[derive(Debug)]
