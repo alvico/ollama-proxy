@@ -1,6 +1,12 @@
 param(
     [string]$OllamaDir = $env:OLLAMA_DIR,
-    [int]$ContextLength = 16384,
+    # 32768, not 16384: re-measured 2026-09-21, the larger window cost nothing on
+    # four of the six models owned (lfm2.5, qwen3.6, nemotron, north-mini-code
+    # all within run-to-run noise) and 6.5% on qwen3.8. 16384 left an agent
+    # client ~575 tokens after its system prompt, so every model needed a
+    # second "-32k" tag to be usable; with this default one tag per model does.
+    # ministral-3 is the exception (-25%) and keeps a "-16k" tag for that.
+    [int]$ContextLength = 32768,
     # Single user, so one slot. Every extra slot multiplies the KV cache by its
     # count, and on a 10GB card that KV is what pushes layers off the GPU:
     # gemma4 went 44/49 -> 49/49 layers and 28 -> 63 tok/s once it stopped
