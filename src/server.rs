@@ -44,8 +44,8 @@ pub async fn run(config: Config) -> io::Result<()> {
 fn describe(config: &Config) {
     // The bind addresses are logged as they succeed, not here, so the log shows
     // what is actually listening rather than what was asked for.
-    for (name, base) in &config.backends {
-        log::info!("backend '{name}' -> {base}");
+    for (name, backend) in &config.backends {
+        log::info!("backend '{name}' -> {} ({:?})", backend.url, backend.kind);
     }
     for (prefix, backend) in &config.routes {
         log::info!("route '{prefix}*' -> '{backend}'");

@@ -12,15 +12,24 @@
     would cost a process and six seconds for a backend no request reaches, so it
     is opt-in. Pass -WithQ8 before running bench-model.ps1, which needs both
     backends up to compare them.
+
+    A llama-server router also starts, on 11437, when LLAMA_SERVER_EXE and
+    LLAMA_SERVER_PRESETS are set (or -LlamaServer / -LlamaPresets are passed).
+    It serves models ollama cannot load -- see _backends_llama in config.json.
+    Both are host paths, so neither has a default here. Without them the stack
+    runs as before and the proxy simply finds that backend down.
 #>
 param(
     [switch]$WithQ8,
-    [string]$ProxyDir    = $PSScriptRoot,
-    [string]$OllamaDir   = $env:OLLAMA_DIR,
-    [string]$ServeScript = (Join-Path $ProxyDir "ollama-serve-awake.ps1"),
-    [int]$Q8Port         = 11435,
-    [int]$F16Port        = 11436,
-    [string]$LogDir      = (Join-Path $env:LOCALAPPDATA "Ollama\serve-logs")
+    [string]$ProxyDir     = $PSScriptRoot,
+    [string]$OllamaDir    = $env:OLLAMA_DIR,
+    [string]$ServeScript  = (Join-Path $ProxyDir "ollama-serve-awake.ps1"),
+    [string]$LlamaServer  = $env:LLAMA_SERVER_EXE,
+    [string]$LlamaPresets = $env:LLAMA_SERVER_PRESETS,
+    [int]$Q8Port          = 11435,
+    [int]$F16Port         = 11436,
+    [int]$LlamaPort       = 11437,
+    [string]$LogDir       = (Join-Path $env:LOCALAPPDATA "Ollama\serve-logs")
 )
 
 # Where ollama lives is a property of the host, not of this project, so it is
@@ -138,6 +147,29 @@ Start-Sleep -Seconds 6
 $stamp     = Get-Date -Format "yyyyMMdd-HHmmss"
 $proxyLog  = Join-Path $LogDir "proxy-$stamp.log"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+# Router mode: no model is loaded until a request names one, so this costs no
+# VRAM while idle, and the proxy unloads it through /models/unload before any
+# ollama model loads. --models-max 1 because a second resident model could
+# never fit beside the first anyway. Its children are llama-server.exe too, so
+# the global llama-server sweeps above and in the finally cover them.
+if ($LlamaServer -and $LlamaPresets) {
+    if ((Test-Path $LlamaServer) -and (Test-Path $LlamaPresets)) {
+        $llamaLog = Join-Path $LogDir "llama-server-$stamp.log"
+        Write-Host "Starting llama-server router on 127.0.0.1:$LlamaPort ..." -ForegroundColor Cyan
+        Write-Host "  llama-server log: $llamaLog"
+        # Start-Process joins ArgumentList with bare spaces, so quote the paths.
+        $procs += Start-Process -FilePath $LlamaServer -PassThru -WindowStyle Hidden `
+            -WorkingDirectory (Split-Path $LlamaServer -Parent) `
+            -RedirectStandardOutput "$llamaLog" -RedirectStandardError "$llamaLog.err" `
+            -ArgumentList @('--models-preset', "`"$LlamaPresets`"", '--models-max', '1',
+                            '--host', '127.0.0.1', '--port', $LlamaPort)
+    } else {
+        Write-Host "Skipping llama-server: not found: $LlamaServer / $LlamaPresets" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Skipping llama-server (set LLAMA_SERVER_EXE and LLAMA_SERVER_PRESETS to serve its models)." -ForegroundColor DarkGray
+}
 
 Write-Host "Starting proxy on 11434 ..." -ForegroundColor Cyan
 Write-Host "  proxy log: $proxyLog"

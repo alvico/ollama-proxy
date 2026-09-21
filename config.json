@@ -3,8 +3,10 @@
   "listen": ["127.0.0.1:11434"],
 
   "_backends": "One server per KV cache type, because OLLAMA_KV_CACHE_TYPE is read once at server start and has no per-request override. Every other setting that matters (num_ctx, num_predict, temperature) can be set per request, so it needs no server of its own. Only f16 is listed now, and start-stack.ps1 starts only that one: nothing routes to q8_0 (see _routes), so a second server was costing a process and six seconds of startup to receive no requests. To route a model to q8_0 again, start with -WithQ8 and add \"q8\": \"http://127.0.0.1:11435\" back here; a route naming a backend that is not listed fails validation at startup rather than at request time. MEASURING does not need this entry -- bench-model.ps1 talks to the backend ports directly, so -WithQ8 on its own is enough.",
+  "_backends_llama": "bonsai is not ollama at all: it is a llama-server in router mode (--models-preset), because the Ternary Bonsai GGUFs use quant types (PQ2_0, Q2_0_g64) that only PrismML's llama.cpp fork implements, and ollama bundles upstream llama.cpp. The router loads a model on its first request and unloads it on POST /models/unload, which is what the proxy's eviction uses, so switching between an ollama model and a bonsai one frees VRAM in both directions exactly as switching between q8 and f16 did. It speaks only the OpenAI API: clients reach it through /v1/chat/completions, the proxy translates its model list into /api/tags, /api/ps and /v1/models, and any other /api/* call naming a bonsai model gets a 400 saying so. start-stack.ps1 starts it when LLAMA_SERVER_EXE and LLAMA_SERVER_PRESETS are set; the preset file (model paths, context, sampling) is host-specific and lives outside this repo. Measured 2026-09-21 on ternary-bonsai-2-27b at ctx 32768: ~63 tok/s eval, cold load 4.7 s, and it fills the GPU, so it cannot share VRAM with any ollama model.",
   "backends": {
-    "f16": "http://127.0.0.1:11436"
+    "f16": "http://127.0.0.1:11436",
+    "bonsai": { "url": "http://127.0.0.1:11437", "kind": "llama-server" }
   },
 
   "_default": "f16, now on measured merit rather than only as a safety fallback. The original reason was a hard constraint: q8_0 quantises KV in blocks of 32, which must divide the model's V head dimension, and kimi-linear (n_embd_head_v=72) could never load on it. kimi-linear was deleted 2026-09-04 and every model now owned has head_v 64/128/256, so the constraint no longer binds anything -- but f16 also won every measurement below, so the default stands on its own.",
@@ -12,7 +14,10 @@
 
   "_routes": "Longest matching prefix wins, so 'gemma4' would cover 'gemma4:12b'. Deliberately EMPTY: re-measured 2026-09-04 on ollama 0.33.2 (10GB RTX 3080, ctx 16384, num_parallel 1, temperature 0, eval tok/s, f16 vs q8) and f16 won on every model owned. lfm2.5:8b 311.5 vs 111.8 (-64%); nemotron-3.5-lightning:30b-a3b 37.4 vs 11.7 (-69%); north-mini-code-1.0 33.0 vs 30.3 (-8%); ministral-3:14b 12.1 vs 12.3 (+1.4%, under the 3% bar); qwen3.8:27b 8.0 vs 6.2 (-23%).",
   "_routes_history": "The August entries were gemma4 -> q8 (53.9 -> 62.9) and qwen3-coder -> q8 (29.6 -> 31.0), both measured on an earlier ollama. Both models were deleted 2026-09-04, so the routes went with them. Those numbers now contradict every 2026-09-04 measurement, so if either model is pulled again, re-measure with bench-model.ps1 rather than restoring the old route -- and see _q8_instability before trusting a single run.",
-  "routes": {},
+  "_routes_bonsai": "The one route is not a KV-cache choice: ternary-bonsai models exist only on the llama-server backend, so they must be routed there by name. The prefix covers every preset whose id starts with it. Preset ids use dashes, not ollama's name:tag, because the router upper-cases whatever follows a colon (it reads it as a Hugging Face quant tag), so 'ternary-bonsai-2:27b' would have been listed as ':27B' and then not found under the name clients were given.",
+  "routes": {
+    "ternary-bonsai": "bonsai"
+  },
 
   "_q8_instability": "q8 is not merely slower here, it is non-reproducible. nemotron-3.5-lightning:30b-a3b measured 11.7 tok/s with f16 benchmarked first and 4.1 tok/s (runs of 2.8 and 5.4) with q8 benchmarked first, a 4x swing for the same model, context and backend. f16 returned 37.4 in BOTH orders (37.1-37.8, then 37.7/37.2). Measurement order was tested explicitly and ruled out as the cause: q8 got worse when it went first, not better. Treat any single q8 measurement as unreliable; require a repeat in both orders before routing to it.",
 

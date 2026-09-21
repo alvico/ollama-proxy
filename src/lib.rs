@@ -6,5 +6,5 @@ pub mod routing;
 pub mod server;
 pub mod state;
 
-pub use config::{Config, ConfigError};
+pub use config::{Backend, BackendKind, Config, ConfigError};
 pub use server::run;

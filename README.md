@@ -36,7 +36,7 @@ See `config.json` for the annotated example.
 | Key               | Description |
 |-------------------|-------------|
 | `listen`          | Address the proxy binds. |
-| `backends`        | Map of backend name → base URL. |
+| `backends`        | Map of backend name → base URL (an ollama server), or → `{ "url": ..., "kind": "llama-server" }` for a llama.cpp `llama-server` in router mode. |
 | `default_backend` | Backend for models with no matching route. |
 | `routes`          | Model prefix → backend name. Longest prefix wins. |
 | `options`         | Per-model request options injected into the `options` object when the client omits them, matched by the same longest prefix. |
@@ -49,6 +49,17 @@ See `config.json` for the annotated example.
 ```powershell
 .\start-stack.ps1
 ```
+
+## llama-server backends
+
+Some models need a llama.cpp build that ollama does not bundle, such as a fork implementing new quant types. A `llama-server` started in router mode (`--models-preset file.ini` or `--models-dir`) can sit behind the proxy as a backend of kind `llama-server`:
+
+- Route its models to it by prefix, like any other backend.
+- Eviction uses the router's `/models/unload`, so switching between an ollama model and a router model frees VRAM in both directions; the router loads a model again on its next request.
+- It speaks only the OpenAI API. `/v1/*` requests are forwarded; `/api/tags`, `/api/ps` and `/v1/models` include its models, translated from its `/models` listing; any other `/api/*` request naming one of its models gets a 400 saying to use `/v1/chat/completions`.
+- Model ids should avoid `:`. The router reads what follows a colon as a Hugging Face quant tag and upper-cases it, so the id it lists would not match the one clients send.
+
+`start-stack.ps1` starts the router on `11437` when `LLAMA_SERVER_EXE` and `LLAMA_SERVER_PRESETS` are set.
 
 ## Tests
 

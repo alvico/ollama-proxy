@@ -1,4 +1,8 @@
-use crate::{backend, config::Config, routing};
+use crate::{
+    backend,
+    config::{Backend, Config},
+    routing,
+};
 use reqwest::Client;
 use serde_json::{Map, Value};
 use std::time::Duration;
@@ -32,8 +36,8 @@ impl AppState {
         )
     }
 
-    pub fn url_of(&self, backend: &str) -> Option<&str> {
-        self.config.backends.get(backend).map(String::as_str)
+    pub fn backend(&self, name: &str) -> Option<&Backend> {
+        self.config.backends.get(name)
     }
 
     pub fn options_for(&self, model: &str) -> Option<&Map<String, Value>> {
@@ -52,9 +56,9 @@ impl AppState {
             return;
         }
 
-        for (name, base) in &self.config.backends {
+        for (name, other) in &self.config.backends {
             if name != target {
-                backend::drain(&self.client, base).await;
+                backend::drain(&self.client, other).await;
             }
         }
 

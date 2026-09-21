@@ -40,10 +40,55 @@ impl Listen {
     }
 }
 
+/// What a backend speaks. Everything the proxy does beyond forwarding --
+/// evicting, listing -- goes through a server-specific API, so it must know.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BackendKind {
+    #[default]
+    Ollama,
+    /// llama.cpp's llama-server in router mode (`--models-preset` or
+    /// `--models-dir`). It serves models ollama cannot load, such as those
+    /// needing a llama.cpp fork, but speaks only the OpenAI API: no `/api/*`.
+    LlamaServer,
+}
+
+/// A bare URL string is an ollama backend, so configs written before kinds
+/// existed keep working; other kinds use the `{ "url", "kind" }` form.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "BackendSpec")]
+pub struct Backend {
+    pub url: String,
+    pub kind: BackendKind,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BackendSpec {
+    Url(String),
+    Full {
+        url: String,
+        #[serde(default)]
+        kind: BackendKind,
+    },
+}
+
+impl From<BackendSpec> for Backend {
+    fn from(spec: BackendSpec) -> Self {
+        match spec {
+            BackendSpec::Url(url) => Self {
+                url,
+                kind: BackendKind::Ollama,
+            },
+            BackendSpec::Full { url, kind } => Self { url, kind },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub listen: Listen,
-    pub backends: HashMap<String, String>,
+    pub backends: HashMap<String, Backend>,
     pub default_backend: String,
     #[serde(default)]
     pub routes: HashMap<String, String>,
